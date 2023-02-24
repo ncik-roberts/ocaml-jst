@@ -67,6 +67,7 @@ module General : sig
     | Half_simple.view
     | `Var of Ident.t * string loc * value_mode
     | `Alias of pattern * Ident.t * string loc * value_mode
+    | `Unpack of Ident.t option loc * value_mode
   ]
   type pattern = view pattern_data
 

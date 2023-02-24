@@ -66,10 +66,6 @@ and pat_extra =
                            branches of [tconst].
          *)
   | Tpat_open of Path.t * Longident.t loc * Env.t
-  | Tpat_unpack
-        (** (module P)     { pat_desc  = Tpat_var "P"
-                           ; pat_extra = (Tpat_unpack, _, _) :: ... }
-         *)
 
 and 'k pattern_desc =
   (* value patterns *)
@@ -122,6 +118,10 @@ and 'k pattern_desc =
             [: P1; ...; Pn :]    (flag = Immutable) *)
   | Tpat_lazy : value general_pattern -> value pattern_desc
         (** lazy P *)
+  | Tpat_unpack : Ident.t option loc * Types.value_mode -> value pattern_desc
+        (** Tpat_unpack (None, _) = (module _)
+            Tpat_unpack (Some _, _) = (module M)
+        *)
   (* computation patterns *)
   | Tpat_value : tpat_value_argument -> computation pattern_desc
         (** P

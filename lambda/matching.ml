@@ -232,6 +232,13 @@ end = struct
       match p.pat_desc with
       | `Any -> stop p `Any
       | `Var (id, s, mode) -> continue p (`Alias (Patterns.omega, id, s, mode))
+      | `Unpack ({ txt = id; loc }, mode) ->
+        begin match id with
+          | None -> stop p `Any
+          | Some id ->
+              let name = { txt = Ident.name id; loc } in
+              continue p (`Alias (Patterns.omega, id, name, mode))
+        end
       | `Alias (p, id, _, _) ->
           aux
             ( (General.view p, patl),
@@ -327,10 +334,14 @@ end = struct
       | `Or (p1, p2, _) ->
           split_explode p1 aliases (split_explode p2 aliases rem)
       | `Alias (p, id, _, _) -> split_explode p (id :: aliases) rem
-      | `Var (id, str, mode) ->
-          explode
-            { p with pat_desc = `Alias (Patterns.omega, id, str, mode) }
-            aliases rem
+      | `Var (id, _, _) -> split_explode Patterns.omega (id :: aliases) rem
+      | `Unpack (id, _) ->
+          let aliases =
+            match id.txt with
+            | None -> aliases
+            | Some id -> id :: aliases
+          in
+          split_explode Patterns.omega aliases rem
       | #view as view ->
           (* We are doing two things here:
              - we freshen the variables of the pattern, to
@@ -569,6 +580,7 @@ end = struct
               filter_rec ((left, p1, right) :: (left, p2, right) :: rem)
           | `Alias (p, _, _, _) -> filter_rec ((left, p, right) :: rem)
           | `Var _ -> filter_rec ((left, Patterns.omega, right) :: rem)
+          | `Unpack _ -> filter_rec ((left, Patterns.omega, right) :: rem)
           | #Simple.view as view -> (
               let p = { p with pat_desc = view } in
               match matcher head p right with
@@ -696,6 +708,7 @@ end = struct
           match p.pat_desc with
           | `Alias (p, _, _, _) -> filter_rec ((p, ps) :: rem)
           | `Var _ -> filter_rec ((Patterns.omega, ps) :: rem)
+          | `Unpack _ -> filter_rec ((Patterns.omega, ps) :: rem)
           | `Or (p1, p2, _) -> filter_rec_or p1 p2 ps rem
           | #Simple.view as view -> (
               let p = { p with pat_desc = view } in
@@ -3440,6 +3453,7 @@ let is_lazy_pat p =
   | Tpat_or _
   | Tpat_constant _
   | Tpat_var _
+  | Tpat_unpack _
   | Tpat_any ->
       false
 
@@ -3463,6 +3477,7 @@ let is_record_with_mutable_field p =
   | Tpat_or _
   | Tpat_constant _
   | Tpat_var _
+  | Tpat_unpack _
   | Tpat_any ->
       false
 
