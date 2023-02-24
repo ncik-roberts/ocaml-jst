@@ -48,7 +48,6 @@ and pat_extra =
   | Tpat_constraint of core_type
   | Tpat_type of Path.t * Longident.t loc
   | Tpat_open of Path.t * Longident.t loc * Env.t
-  | Tpat_unpack
 
 and 'k pattern_desc =
   (* value patterns *)
@@ -72,6 +71,7 @@ and 'k pattern_desc =
   | Tpat_array :
       mutable_flag * value general_pattern list -> value pattern_desc
   | Tpat_lazy : value general_pattern -> value pattern_desc
+  | Tpat_unpack : Ident.t option loc * value_mode -> value pattern_desc
   (* computation patterns *)
   | Tpat_value : tpat_value_argument -> computation pattern_desc
   | Tpat_exception : value general_pattern -> computation pattern_desc
@@ -734,6 +734,7 @@ let rec classify_pattern_desc : type k . k pattern_desc -> k pattern_category =
   | Tpat_any -> Value
   | Tpat_var _ -> Value
   | Tpat_constant _ -> Value
+  | Tpat_unpack _ -> Value
 
   | Tpat_value _ -> Computation
   | Tpat_exception _ -> Computation
@@ -764,7 +765,8 @@ let shallow_iter_pattern_desc
   | Tpat_lazy p -> f.f p
   | Tpat_any
   | Tpat_var _
-  | Tpat_constant _ -> ()
+  | Tpat_constant _
+  | Tpat_unpack _ -> ()
   | Tpat_value p -> f.f p
   | Tpat_exception p -> f.f p
   | Tpat_or(p1, p2, _) -> f.f p1; f.f p2
@@ -790,7 +792,8 @@ let shallow_map_pattern_desc
   | Tpat_var _
   | Tpat_constant _
   | Tpat_any
-  | Tpat_variant (_,None,_) -> d
+  | Tpat_variant (_,None,_)
+  | Tpat_unpack _ -> d
   | Tpat_value p -> Tpat_value (f.f p)
   | Tpat_exception p -> Tpat_exception (f.f p)
   | Tpat_or (p1,p2,path) ->

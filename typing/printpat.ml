@@ -35,8 +35,6 @@ let pretty_const c = match c with
 
 let pretty_extra ppf (cstr, _loc, _attrs) pretty_rest rest =
   match cstr with
-  | Tpat_unpack ->
-     fprintf ppf "@[(module %a)@]" pretty_rest rest
   | Tpat_constraint _ ->
      fprintf ppf "@[(%a : _)@]" pretty_rest rest
   | Tpat_type _ ->
@@ -53,6 +51,9 @@ let rec pretty_val : type k . _ -> k general_pattern -> _ = fun ppf v ->
   match v.pat_desc with
   | Tpat_any -> fprintf ppf "_"
   | Tpat_var (x,_,_) -> fprintf ppf "%s" (Ident.name x)
+  | Tpat_unpack ({ txt = Some x; _ }, _) ->
+      fprintf ppf "@[<2>module@ %s@]" (Ident.name x)
+  | Tpat_unpack ({ txt = None; _ }, _) -> fprintf ppf "@[<2>module@ _@]"
   | Tpat_constant c -> fprintf ppf "%s" (pretty_const c)
   | Tpat_tuple vs ->
       fprintf ppf "@[(%a)@]" (pretty_vals ",") vs

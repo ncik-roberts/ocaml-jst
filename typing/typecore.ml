@@ -805,7 +805,7 @@ let rec build_as_type_and_mode ~refine ~mode (env : Env.t ref) p =
     (* Cf. #1655 *)
     List.fold_left (fun as_ty (extra, _loc, _attrs) ->
       match extra with
-      | Tpat_type _ | Tpat_open _ | Tpat_unpack -> as_ty
+      | Tpat_type _ | Tpat_open _ -> as_ty
       | Tpat_constraint cty ->
         (* [generic_instance] can only be used if the variables of the original
            type ([cty.ctyp_type] here) are not at [generic_level], which they are
@@ -916,7 +916,7 @@ and build_as_type_aux ~refine ~mode (env : Env.t ref) p =
         | Unknown | Always_on_64bits -> mode
       in
       p.pat_type, mode
-  | Tpat_any | Tpat_var _
+  | Tpat_any | Tpat_var _ | Tpat_unpack _
   | Tpat_array _ | Tpat_lazy _ ->
       p.pat_type, mode
 
@@ -2105,27 +2105,20 @@ and type_pat_aux
   | Ppat_unpack name ->
       assert construction_not_used_in_counterexamples;
       let t = instance expected_ty in
-      begin match name.txt with
-      | None ->
-          rvp k {
-            pat_desc = Tpat_any;
-            pat_loc = sp.ppat_loc;
-            pat_extra=[Tpat_unpack, name.loc, sp.ppat_attributes];
-            pat_type = t;
-            pat_attributes = [];
-            pat_env = !env }
-      | Some s ->
-          let v = { name with txt = s } in
-          let id = enter_variable loc v alloc_mode.mode
-                     t ~is_module:true sp.ppat_attributes in
-          rvp k {
-            pat_desc = Tpat_var (id, v, alloc_mode.mode);
-            pat_loc = sp.ppat_loc;
-            pat_extra=[Tpat_unpack, loc, sp.ppat_attributes];
-            pat_type = t;
-            pat_attributes = [];
-            pat_env = !env }
-      end
+      let id =
+        Option.map
+          (fun txt -> enter_variable loc { name with txt } alloc_mode.mode
+            t ~is_module:true sp.ppat_attributes)
+          name.txt
+      in
+      let id = { name with txt = id } in
+      rvp k {
+        pat_desc = Tpat_unpack (id, alloc_mode.mode);
+        pat_loc = sp.ppat_loc;
+        pat_extra = [];
+        pat_type = t;
+        pat_attributes = [];
+        pat_env = !env }
   | Ppat_alias(sq, name) ->
       assert construction_not_used_in_counterexamples;
       type_pat Value sq expected_ty (fun q ->
