@@ -245,6 +245,12 @@ and pattern : type k . _ -> _ -> k general_pattern -> unit = fun i ppf x ->
   | Tpat_var (s,_,m) ->
       line i ppf "Tpat_var \"%a\"\n" fmt_ident s;
       value_mode i ppf m
+  | Tpat_unpack ({ txt = Some s; _ }, m) ->
+      line i ppf "Tpat_unpack \"%a\"\n" fmt_ident s;
+      value_mode i ppf m;
+  | Tpat_unpack ({ txt = None; _ }, m) ->
+    line i ppf "Tpat_unpack _\n";
+    value_mode i ppf m;
   | Tpat_alias (p, s,_,m) ->
       line i ppf "Tpat_alias \"%a\"\n" fmt_ident s;
       value_mode i ppf m;
@@ -287,9 +293,6 @@ and pattern : type k . _ -> _ -> k general_pattern -> unit = fun i ppf x ->
 
 and pattern_extra i ppf (extra_pat, _, attrs) =
   match extra_pat with
-  | Tpat_unpack ->
-     line i ppf "Tpat_extra_unpack\n";
-     attributes i ppf attrs;
   | Tpat_constraint cty ->
      line i ppf "Tpat_extra_constraint\n";
      attributes i ppf attrs;
