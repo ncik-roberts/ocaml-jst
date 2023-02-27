@@ -49,6 +49,7 @@ type type_expected = {
 }
 
 type to_unpack = {
+  tu_ident : Ident.t;
   tu_name: string Location.loc;
   tu_loc: Location.t;
   tu_uid: Uid.t
@@ -696,7 +697,11 @@ type pattern_variable =
   }
 
 type module_variable =
-  string loc * Location.t
+  {
+    mv_id: Ident.t;
+    mv_name: string loc;
+    mv_loc: Location.t;
+  }
 
 let pattern_variables = ref ([] : pattern_variable list)
 let pattern_force = ref ([] : (unit -> unit) list)
@@ -740,21 +745,28 @@ let enter_variable ?(is_module=false) ?(is_as_variable=false) loc name mode ty
   if List.exists (fun {pv_id; _} -> Ident.name pv_id = name.txt)
       !pattern_variables
   then raise(Error(loc, Env.empty, Multiply_bound_variable name.txt));
-  let id = Ident.create_local name.txt in
+  let id =
+    if is_module then begin
+      (* Note: unpack patterns enter a variable of the same name *)
+      if not !allow_modules then
+        raise (Error (loc, Env.empty, Modules_not_allowed));
+      escape ~loc ~env:Env.empty ~reason:Other mode;
+      begin_def ();
+      let scope = create_scope () in
+      let id = Ident.create_scoped name.txt ~scope in
+      module_variables :=
+        { mv_id = id; mv_name = name; mv_loc = loc } :: !module_variables;
+      id
+    end else
+      Ident.create_local name.txt
+  in
   pattern_variables :=
     {pv_id = id;
-     pv_mode = mode;
-     pv_type = ty;
-     pv_loc = loc;
-     pv_as_var = is_as_variable;
-     pv_attributes = attrs} :: !pattern_variables;
-  if is_module then begin
-    (* Note: unpack patterns enter a variable of the same name *)
-    if not !allow_modules then
-      raise (Error (loc, Env.empty, Modules_not_allowed));
-    escape ~loc ~env:Env.empty ~reason:Other mode;
-    module_variables := (name, loc) :: !module_variables
-  end;
+      pv_mode = mode;
+      pv_type = ty;
+      pv_loc = loc;
+      pv_as_var = is_as_variable;
+      pv_attributes = attrs} :: !pattern_variables;
   id
 
 let sort_pattern_variables vs =
@@ -2568,8 +2580,8 @@ let type_pattern_list
   let patl = List.map2 type_pat spatl expected_tys in
   let pvs = get_ref pattern_variables in
   let unpacks =
-    List.map (fun (name, loc) ->
-      {tu_name = name; tu_loc = loc;
+    List.map (fun { mv_id; mv_name; mv_loc } ->
+      {tu_ident = mv_id; tu_loc = mv_loc; tu_name = mv_name;
        tu_uid = Uid.mk ~current_unit:(Env.get_unit_name ())}
     ) (get_ref module_variables)
   in
@@ -6227,9 +6239,8 @@ and type_unpacks ?(in_function : (Location.t * type_expr * bool) option)
   if unpacks = [] then type_expect ?in_function env expected_mode sbody expected_ty else
   let ty = newvar() in
   (* remember original level *)
-  let extended_env, tunpacks =
-    List.fold_left (fun (env, tunpacks) unpack ->
-      begin_def ();
+  let extended_env =
+    List.fold_left (fun env unpack ->
       Typetexp.TyVarEnv.with_local_scope begin fun () ->
         let modl, md_shape =
           !type_module env
@@ -6245,19 +6256,15 @@ and type_unpacks ?(in_function : (Location.t * type_expr * bool) option)
           | Mty_alias _ -> Mp_absent
           | _ -> Mp_present
         in
-        let scope = create_scope () in
         let md =
           { md_type = modl.mod_type; md_attributes = [];
             md_loc = unpack.tu_name.loc;
             md_uid = unpack.tu_uid; }
         in
-        let (id, env) =
-          Env.enter_module_declaration ~scope ~shape:md_shape
-            unpack.tu_name.txt pres md env
-        in
-        env, (id, unpack.tu_name, pres, modl) :: tunpacks
+        Env.add_module_declaration ~shape:md_shape ~check:true
+          unpack.tu_ident pres md env
       end
-    ) (env, []) unpacks
+    ) env unpacks
   in
   (* ideally, we should catch Expr_type_clash errors
      in type_expect triggered by escaping identifiers from the local module
@@ -6266,21 +6273,27 @@ and type_unpacks ?(in_function : (Location.t * type_expr * bool) option)
   let body =
     type_expect ?in_function extended_env expected_mode sbody expected_ty
   in
-  let exp_loc = { body.exp_loc with loc_ghost = true } in
-  let exp_attributes = [Ast_helper.Attr.mk (mknoloc "#modulepat") (PStr [])] in
-  List.fold_left (fun body (id, name, pres, modl) ->
-    (* go back to parent level *)
-    end_def ();
-    Ctype.unify_var extended_env ty body.exp_type;
-    re {
-      exp_desc = Texp_letmodule(Some id, { name with txt = Some name.txt },
-                                pres, modl, body);
-      exp_loc;
-      exp_attributes;
-      exp_extra = [];
-      exp_type = ty;
-      exp_env = env }
-  ) body tunpacks
+  Ctype.unify_var extended_env ty body.exp_type;
+  List.iter (fun _ -> end_def ()) unpacks;
+  body
+
+  (* TODO nroberts: I basically just want to move this from here to the pattern
+   *    match compiler. Just need to do one unification; it's idempotent.
+   *
+   * List.fold_left (fun body (id, name, pres, modl) ->
+   *   (* go back to parent level *)
+   *   end_def ();
+     let exp_loc = { body.exp_loc with loc_ghost = true } in
+     let exp_attributes = [Ast_helper.Attr.mk (mknoloc "#modulepat") (PStr [])] in
+   *   re {
+   *     exp_desc = Texp_letmodule(Some id, { name with txt = Some name.txt },
+   *                               pres, modl, body);
+   *     exp_loc;
+   *     exp_attributes;
+   *     exp_extra = [];
+   *     exp_type = ty;
+   *     exp_env = env }
+   * ) body tunpacks *)
 
 (* Typing of match cases *)
 and type_cases
@@ -6407,8 +6420,8 @@ and type_cases
             ~check_as:(fun s -> Warnings.Unused_var s)
         in
         let unpacks =
-          List.map (fun (name, loc) ->
-            {tu_name = name; tu_loc = loc;
+          List.map (fun { mv_id; mv_name; mv_loc } ->
+            {tu_ident = mv_id; tu_name = mv_name; tu_loc = mv_loc;
              tu_uid = Uid.mk ~current_unit:(Env.get_unit_name ())}
           ) unpacks
         in
