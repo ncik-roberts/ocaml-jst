@@ -179,7 +179,8 @@ let wrap_bindings bindings exp =
 let rec trivial_pat pat =
   match pat.pat_desc with
     Tpat_var _
-  | Tpat_any -> true
+  | Tpat_any
+  | Tpat_unpack _ -> true
   | Tpat_alias (p, _, _, _) ->
       trivial_pat p
   | Tpat_construct (_, cd, [], _) ->

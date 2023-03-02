@@ -6538,7 +6538,6 @@ and type_let
     env rec_flag spat_sexp_list allow =
   let open Ast_helper in
   begin_def();
-  let scope = create_scope () in
   if !Clflags.principal then begin_def ();
 
   let is_fake_let =
@@ -6551,6 +6550,13 @@ and type_let
   in
   let may_contain_modules =
     List.exists (fun { pvb_pat } -> may_contain_modules pvb_pat) spat_sexp_list
+  in
+  let scope =
+    if may_contain_modules
+    then begin
+      begin_def ();
+      create_scope ()
+    end else get_current_level ()
   in
   let rec sexp_is_fun sexp =
     match Extensions.Expression.of_ast sexp with
@@ -6799,15 +6805,17 @@ and type_let
        Builtin_attributes.warning_scope ~ppwarning:false attrs
          (fun () ->
             ignore(check_partial env pat.pat_type pat.pat_loc
-                     [case pat exp] ~scope)
+                     [case pat exp] ~scope : Typedtree.partial)
          )
     )
     pat_list
     (List.map2 (fun (attrs, _, _, _) (e, _) -> attrs, e) spatl exp_list);
   let pvs = List.map (fun pv -> { pv with pv_type = instance pv.pv_type}) pvs in
-  end_def();
-  if may_contain_modules then
+  if may_contain_modules then begin
+    end_def ();
     List.iter (fun (e, _) -> unify_exp env e (newvar ())) exp_list;
+  end;
+  end_def();
   List.iter2
     (fun (_,pat,_) (exp, _) ->
        if maybe_expansive exp then
