@@ -6845,7 +6845,11 @@ and type_let
   if is_recursive then
     List.iter
       (fun {vb_pat=pat} -> match pat.pat_desc with
-           Tpat_var _ -> ()
+         (* TODO nroberts: different error message here
+
+            Error: Only variables are allowed as left-hand side of `let rec'
+         *)
+           Tpat_var _ | Tpat_unpack ({ txt = Some _; _ }, _) -> ()
          | _ -> raise(Error(pat.pat_loc, env, Illegal_letrec_pat)))
       l;
   List.iter (function
