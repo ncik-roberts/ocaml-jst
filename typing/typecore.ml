@@ -604,14 +604,6 @@ let unify_exp_types loc env ty expected_ty =
   | Tags(l1,l2) ->
       raise(Typetexp.Error(loc, env, Typetexp.Variant_tags (l1, l2)))
 
-(* scope at which to create the module ident in a scope *)
-let module_pattern_scope = ref None
-
-let get_module_pattern_scope () =
-  match !module_pattern_scope with
-  | Some y -> y
-  | None -> assert false
-
 (* level at which to create the local type declarations *)
 let gadt_equations_level = ref None
 
@@ -714,12 +706,13 @@ type module_variable =
 
 let pattern_variables = ref ([] : pattern_variable list)
 let pattern_force = ref ([] : (unit -> unit) list)
-let allow_modules = ref false
+let modules_allowed_at_scope = ref (None : int option)
 let module_variables = ref ([] : module_variable list)
-let reset_pattern allow =
+
+let reset_pattern modules_allowed =
   pattern_variables := [];
   pattern_force := [];
-  allow_modules := allow;
+  modules_allowed_at_scope := modules_allowed;
   module_variables := [];
 ;;
 
@@ -757,14 +750,15 @@ let enter_variable ?(is_module=false) ?(is_as_variable=false) loc name mode ty
   let id =
     if is_module then begin
       (* Note: unpack patterns enter a variable of the same name *)
-      if not !allow_modules then
+      match !modules_allowed_at_scope with
+      | None ->
         raise (Error (loc, Env.empty, Modules_not_allowed));
-      escape ~loc ~env:Env.empty ~reason:Other mode;
-      let scope = get_module_pattern_scope () in
-      let id = Ident.create_scoped name.txt ~scope in
-      module_variables :=
-        { mv_id = id; mv_name = name; mv_loc = loc } :: !module_variables;
-      id
+      | Some scope ->
+        escape ~loc ~env:Env.empty ~reason:Other mode;
+        let id = Ident.create_scoped name.txt ~scope in
+        module_variables :=
+          { mv_id = id; mv_name = name; mv_loc = loc } :: !module_variables;
+        id
     end else
       Ident.create_local name.txt
   in
@@ -2518,18 +2512,15 @@ and type_pat_aux
       raise (Error_forward (Builtin_attributes.error_of_extension ext))
 
 let type_pat category ?no_existentials ?(mode=Normal)
-    ?(lev=get_current_level()) ~alloc_mode ~scope env sp expected_ty =
-  Misc.protect_refs
-    [ Misc.R (gadt_equations_level, Some lev);
-      Misc.R (module_pattern_scope, Some scope);
-    ] (fun () ->
-        type_pat category ~no_existentials ~mode
-          ~alloc_mode ~env sp expected_ty (fun x -> x)
-    )
+    ?(lev=get_current_level()) ~alloc_mode env sp expected_ty =
+  Misc.protect_refs [ Misc.R (gadt_equations_level, Some lev) ] (fun () ->
+    type_pat category ~no_existentials ~mode
+      ~alloc_mode ~env sp expected_ty (fun x -> x)
+  )
 
 (* this function is passed to Partial.parmatch
    to type check gadt nonexhaustiveness *)
-let partial_pred ~lev ~scope ~splitting_mode ?(explode=0)
+let partial_pred ~lev ~splitting_mode ~modules_allowed ?(explode=0)
       env expected_ty constrs labels p =
   let env = ref env in
   let state = save_state env in
@@ -2540,9 +2531,9 @@ let partial_pred ~lev ~scope ~splitting_mode ?(explode=0)
         constrs; labels;
       } in
   try
-    reset_pattern true;
+    reset_pattern modules_allowed;
     let alloc_mode = simple_pat_mode Value_mode.global in
-    let typed_p = type_pat Value ~lev ~scope ~mode ~alloc_mode env p expected_ty in
+    let typed_p = type_pat Value ~lev ~mode ~alloc_mode env p expected_ty in
     set_state state env;
     (* types are invalidated but we don't need them here *)
     Some typed_p
@@ -2550,17 +2541,22 @@ let partial_pred ~lev ~scope ~splitting_mode ?(explode=0)
     set_state state env;
     None
 
-let check_partial ?(lev=get_current_level ()) ~scope env expected_ty loc cases =
+let check_partial
+      ?(lev=get_current_level ()) ~modules_allowed
+      env expected_ty loc cases =
   let explode = match cases with [_] -> 5 | _ -> 0 in
   let splitting_mode = Refine_or {inside_nonsplit_or = false} in
   Parmatch.check_partial
-    (partial_pred ~lev ~scope ~splitting_mode ~explode env expected_ty) loc cases
+    (partial_pred ~lev ~splitting_mode ~explode ~modules_allowed env expected_ty)
+    loc cases
 
-let check_unused ?(lev=get_current_level ()) ~scope env expected_ty cases =
+let check_unused ?(lev=get_current_level ()) ~modules_allowed
+      env expected_ty cases =
   Parmatch.check_unused
     (fun refute constrs labels spat ->
       match
-        partial_pred ~lev ~scope ~splitting_mode:Backtrack_or ~explode:5
+        partial_pred ~lev ~splitting_mode:Backtrack_or ~explode:5
+          ~modules_allowed
           env expected_ty constrs labels spat
       with
         Some pat when refute ->
@@ -2568,25 +2564,23 @@ let check_unused ?(lev=get_current_level ()) ~scope env expected_ty cases =
       | r -> r)
     cases
 
-let type_pattern category ~lev ~scope ~alloc_mode env spat expected_ty =
-  (* TODO nroberts: we could replace reset_pattern with setting the global int maybe?  *)
-  reset_pattern true;
+let type_pattern category ~lev ~module_scope ~alloc_mode env spat expected_ty =
+  reset_pattern (Some module_scope);
   let new_env = ref env in
-  let pat = type_pat category ~lev ~scope ~alloc_mode new_env spat expected_ty in
+  let pat = type_pat category ~lev ~alloc_mode new_env spat expected_ty in
   let pvs = get_ref pattern_variables in
   let unpacks = get_ref module_variables in
   (pat, !new_env, get_ref pattern_force, pvs, unpacks)
 
-let type_pattern_list
-    category no_existentials env spatl expected_tys allow ~scope
-  =
-  reset_pattern allow;
+let type_pattern_list ~modules_allowed
+    category no_existentials env spatl expected_tys =
+  reset_pattern modules_allowed;
   let new_env = ref env in
   let type_pat (attrs, pat_mode, exp_mode, pat) ty =
     Builtin_attributes.warning_scope ~ppwarning:false attrs
       (fun () ->
          exp_mode,
-         type_pat category ~scope ~no_existentials ~alloc_mode:pat_mode new_env pat ty
+         type_pat category ~no_existentials ~alloc_mode:pat_mode new_env pat ty
       )
   in
   let patl = List.map2 type_pat spatl expected_tys in
@@ -2602,12 +2596,11 @@ let type_pattern_list
 
 let type_class_arg_pattern cl_num val_env met_env l spat =
   if !Clflags.principal then Ctype.begin_def ();
-  reset_pattern false;
+  reset_pattern None;
   let nv = newvar () in
   let alloc_mode = simple_pat_mode Value_mode.global in
   let pat =
-    (* TODO nroberts: ok bc we reset_pattern false above *)
-    type_pat Value ~scope:(get_current_level ()) ~no_existentials:In_class_args ~alloc_mode
+    type_pat Value ~no_existentials:In_class_args ~alloc_mode
       (ref val_env) spat nv in
   if has_variants pat then begin
     Parmatch.pressure_variants val_env [pat];
@@ -2657,11 +2650,11 @@ let type_class_arg_pattern cl_num val_env met_env l spat =
 let type_self_pattern env spat =
   let open Ast_helper in
   let spat = Pat.mk(Ppat_alias (spat, mknoloc "selfpat-*")) in
-  reset_pattern false;
+  reset_pattern None;
   let nv = newvar() in
   let alloc_mode = simple_pat_mode Value_mode.global in
   let pat =
-    type_pat Value ~no_existentials:In_self_pattern ~alloc_mode ~scope:(get_current_level ()) (ref env) spat nv in
+    type_pat Value ~no_existentials:In_self_pattern ~alloc_mode (ref env) spat nv in
   List.iter (fun f -> f()) (get_ref pattern_force);
   let pv = !pattern_variables in
   pattern_variables := [];
@@ -3941,7 +3934,7 @@ and type_expect_
       let may_contain_modules =
         List.exists (fun { pvb_pat } -> may_contain_modules pvb_pat) spat_sexp_list
       in
-      let scope =
+      let module_scope =
         if may_contain_modules
         then begin
           begin_def ();
@@ -3949,7 +3942,8 @@ and type_expect_
         end else get_current_level ()
       in
       let (pat_exp_list, new_env, unpacks) =
-        type_let existential_context env rec_flag spat_sexp_list true ~scope
+        type_let existential_context env rec_flag spat_sexp_list
+          ~modules_allowed:(Some module_scope)
       in
       let in_function =
         match sexp.pexp_attributes with
@@ -6340,7 +6334,7 @@ and type_cases
     if may_contain_gadts then begin_def ();
     get_current_level ()
   in
-  let scope =
+  let module_scope =
     if may_contain_modules then begin
       begin_def ();
       create_scope ()
@@ -6363,7 +6357,8 @@ and type_cases
         end_def ();
         generalize_structure ty_arg;
         let (pat, ext_env, force, pvs, unpacks) =
-          type_pattern category ~scope ~lev ~alloc_mode:pmode env pc_lhs ty_arg
+          type_pattern category ~module_scope ~lev ~alloc_mode:pmode
+            env pc_lhs ty_arg
         in
         pattern_force := force @ !pattern_force;
         let pat =
@@ -6491,9 +6486,10 @@ and type_cases
       | Computation -> split_cases env cases in
   if val_cases = [] && exn_cases <> [] then
     raise (Error (loc, env, No_value_clauses));
+  let modules_allowed = Some module_scope in
   let partial =
     if partial_flag then
-      check_partial ~lev ~scope env ty_arg_check loc val_cases
+      check_partial ~lev env ty_arg_check loc val_cases ~modules_allowed
     else
       Partial
   in
@@ -6502,8 +6498,8 @@ and type_cases
       check_absent_variant branch_env (as_comp_pattern category typed_pat)
     ) half_typed_cases;
     if delayed then (begin_def (); init_def lev);
-    check_unused ~lev ~scope env ty_arg_check val_cases ;
-    check_unused ~lev ~scope env Predef.type_exn exn_cases ;
+    check_unused ~lev ~modules_allowed env ty_arg_check val_cases ;
+    check_unused ~lev ~modules_allowed env Predef.type_exn exn_cases ;
     if delayed then end_def ();
     Parmatch.check_ambiguous_bindings val_cases ;
     Parmatch.check_ambiguous_bindings exn_cases
@@ -6530,8 +6526,9 @@ and type_let
     ?(check = fun s -> Warnings.Unused_var s)
     ?(check_strict = fun s -> Warnings.Unused_var_strict s)
     ?(force_global = false)
+    ~modules_allowed
     existential_context
-    env rec_flag spat_sexp_list allow ~scope =
+    env rec_flag spat_sexp_list =
   let open Ast_helper in
   begin_def();
   if !Clflags.principal then begin_def ();
@@ -6612,7 +6609,8 @@ and type_let
   let nvs = List.map (fun _ -> newvar ()) spatl in
   if is_recursive then begin_def ();
   let (pat_list, new_env, force, pvs, unpacks) =
-    type_pattern_list Value existential_context env spatl nvs allow ~scope in
+    type_pattern_list Value existential_context env spatl nvs ~modules_allowed
+  in
   if is_recursive then begin
     end_def ();
     iter_pattern_variables_type generalize pvs
@@ -6791,7 +6789,7 @@ and type_let
        Builtin_attributes.warning_scope ~ppwarning:false attrs
          (fun () ->
             ignore(check_partial env pat.pat_type pat.pat_loc
-                     [case pat exp] ~scope : Typedtree.partial)
+                     [case pat exp] ~modules_allowed : Typedtree.partial)
          )
     )
     pat_list
@@ -7090,7 +7088,11 @@ and type_comprehension_clauses
 and type_comprehension_clause ~loc ~comprehension_type ~container_type env
   : Extensions.Comprehensions.clause -> _ = function
   | For bindings ->
-      reset_pattern true;
+    (* TODO: module patterns are currently broken for list comprehensions anyway,
+       so it's not too sad to disallow them here, but eventually we'll want to
+       allow them.
+    *)
+      reset_pattern None;
       let tbindings =
         List.map
           (type_comprehension_binding
@@ -7180,7 +7182,6 @@ and type_comprehension_iterator
           (ref env)
           pattern
           item_ty
-          ~scope:(get_current_level ())
       in
       Texp_comp_in { pattern; sequence }
 
@@ -7206,17 +7207,16 @@ let type_binding env rec_flag ?force_global spat_sexp_list =
     type_let
       ~check:(fun s -> Warnings.Unused_value_declaration s)
       ~check_strict:(fun s -> Warnings.Unused_value_declaration s)
-      ~scope:(get_current_level ())
+      ~modules_allowed:None
       ?force_global
       At_toplevel
-      env rec_flag spat_sexp_list false
+      env rec_flag spat_sexp_list
   in
   (pat_exp_list, new_env)
 
 let type_let existential_ctx env rec_flag spat_sexp_list =
   let (pat_exp_list, new_env, _unpacks) =
-    type_let existential_ctx env rec_flag spat_sexp_list false
-      ~scope:(get_current_level ())
+    type_let ~modules_allowed:None existential_ctx env rec_flag spat_sexp_list
   in
   (pat_exp_list, new_env)
 
