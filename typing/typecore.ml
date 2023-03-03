@@ -6538,7 +6538,6 @@ and type_let
     env rec_flag spat_sexp_list allow =
   let open Ast_helper in
   begin_def();
-  let scope = create_scope () in
   if !Clflags.principal then begin_def ();
 
   let is_fake_let =
@@ -6817,8 +6816,6 @@ and type_let
     List.iter (fun (e, _) -> unify_exp env e (newvar ())) exp_list;
   end;
   end_def();
-  if may_contain_modules then
-    List.iter (fun (e, _) -> unify_exp env e (newvar ())) exp_list;
   List.iter2
     (fun (_,pat,_) (exp, _) ->
        if maybe_expansive exp then
