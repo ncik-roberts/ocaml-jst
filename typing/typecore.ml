@@ -6306,24 +6306,6 @@ and type_unpacks ?(in_function : (Location.t * type_expr * bool) option)
   *)
   type_expect ?in_function extended_env expected_mode sbody expected_ty
 
-  (* TODO nroberts: I basically just want to move this from here to the pattern
-   *    match compiler. Just need to do one unification; it's idempotent.
-   *
-   * List.fold_left (fun body (id, name, pres, modl) ->
-   *   (* go back to parent level *)
-   *   end_def ();
-     let exp_loc = { body.exp_loc with loc_ghost = true } in
-     let exp_attributes = [Ast_helper.Attr.mk (mknoloc "#modulepat") (PStr [])] in
-   *   re {
-   *     exp_desc = Texp_letmodule(Some id, { name with txt = Some name.txt },
-   *                               pres, modl, body);
-   *     exp_loc;
-   *     exp_attributes;
-   *     exp_extra = [];
-   *     exp_type = ty;
-   *     exp_env = env }
-   * ) body tunpacks *)
-
 (* Typing of match cases *)
 and type_cases
     : type k . k pattern_category ->
