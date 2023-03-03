@@ -841,6 +841,9 @@ let rec iter_bound_idents
   match pat.pat_desc with
   | Tpat_var (id, s, _mode) ->
      f (id,s,pat.pat_type)
+  | Tpat_unpack ({ txt = None; _ }, _mode) -> ()
+  | Tpat_unpack ({ txt = Some id; _ } as loc, _mode) ->
+     f (id, { loc with txt = Ident.name id }, pat.pat_type)
   | Tpat_alias(p, id, s, _mode) ->
       iter_bound_idents f p;
       f (id,s,pat.pat_type)
@@ -879,6 +882,9 @@ let let_bound_idents_with_modes bindings =
       match pat.pat_desc with
       | Tpat_var (id, { loc }, mode) ->
           Ident.Tbl.add modes id (loc, mode)
+      | Tpat_unpack ({ txt = None }, _mode) -> ()
+      | Tpat_unpack ({ txt = Some id; loc } , mode) ->
+          Ident.Tbl.add modes id (loc, mode)
       | Tpat_alias(p, id, { loc }, mode) ->
           loop p;
           Ident.Tbl.add modes id (loc, mode)
@@ -903,6 +909,12 @@ let rec alpha_pat
       {p with pat_desc =
        try Tpat_var (alpha_var env id, s, mode) with
        | Not_found -> Tpat_any}
+  | Tpat_unpack ({ txt = None }, _mode) -> p
+  | Tpat_unpack ({ txt = Some id } as loc, mode) ->
+      {p with pat_desc =
+       match alpha_var env id with
+       | id -> Tpat_unpack ({ loc with txt = Some id }, mode)
+       | exception Not_found -> Tpat_unpack ({ loc with txt = None }, mode)}
   | Tpat_alias (p1, id, s, mode) ->
       let new_p =  alpha_pat env p1 in
       begin try
