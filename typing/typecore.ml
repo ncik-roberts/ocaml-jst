@@ -3938,8 +3938,18 @@ and type_expect_
         if rec_flag = Recursive then In_rec
         else if List.compare_length_with spat_sexp_list 1 > 0 then In_group
         else With_attributes in
+      let may_contain_modules =
+        List.exists (fun { pvb_pat } -> may_contain_modules pvb_pat) spat_sexp_list
+      in
+      let scope =
+        if may_contain_modules
+        then begin
+          begin_def ();
+          create_scope ()
+        end else get_current_level ()
+      in
       let (pat_exp_list, new_env, unpacks) =
-        type_let existential_context env rec_flag spat_sexp_list true
+        type_let existential_context env rec_flag spat_sexp_list true ~scope
       in
       let in_function =
         match sexp.pexp_attributes with
@@ -3954,6 +3964,10 @@ and type_expect_
         if rec_flag = Recursive then
           check_recursive_bindings env pat_exp_list
       in
+      if may_contain_modules then begin
+        end_def ();
+        unify_exp new_env body (newvar ());
+      end;
       re {
         exp_desc = Texp_let(rec_flag, pat_exp_list, body);
         exp_loc = loc; exp_extra = [];
@@ -6535,7 +6549,7 @@ and type_let
     ?(check_strict = fun s -> Warnings.Unused_var_strict s)
     ?(force_global = false)
     existential_context
-    env rec_flag spat_sexp_list allow =
+    env rec_flag spat_sexp_list allow ~scope =
   let open Ast_helper in
   begin_def();
   if !Clflags.principal then begin_def ();
@@ -6547,16 +6561,6 @@ and type_let
         true (* the fake let-declaration introduced by fun ?(x = e) -> ... *)
     | _ ->
         false
-  in
-  let may_contain_modules =
-    List.exists (fun { pvb_pat } -> may_contain_modules pvb_pat) spat_sexp_list
-  in
-  let scope =
-    if may_contain_modules
-    then begin
-      begin_def ();
-      create_scope ()
-    end else get_current_level ()
   in
   let rec sexp_is_fun sexp =
     match Extensions.Expression.of_ast sexp with
@@ -6811,10 +6815,6 @@ and type_let
     pat_list
     (List.map2 (fun (attrs, _, _, _) (e, _) -> attrs, e) spatl exp_list);
   let pvs = List.map (fun pv -> { pv with pv_type = instance pv.pv_type}) pvs in
-  if may_contain_modules then begin
-    end_def ();
-    List.iter (fun (e, _) -> unify_exp env e (newvar ())) exp_list;
-  end;
   end_def();
   List.iter2
     (fun (_,pat,_) (exp, _) ->
@@ -7224,6 +7224,7 @@ let type_binding env rec_flag ?force_global spat_sexp_list =
     type_let
       ~check:(fun s -> Warnings.Unused_value_declaration s)
       ~check_strict:(fun s -> Warnings.Unused_value_declaration s)
+      ~scope:(get_current_level ())
       ?force_global
       At_toplevel
       env rec_flag spat_sexp_list false
@@ -7232,7 +7233,9 @@ let type_binding env rec_flag ?force_global spat_sexp_list =
 
 let type_let existential_ctx env rec_flag spat_sexp_list =
   let (pat_exp_list, new_env, _unpacks) =
-    type_let existential_ctx env rec_flag spat_sexp_list false in
+    type_let existential_ctx env rec_flag spat_sexp_list false
+      ~scope:(get_current_level ())
+  in
   (pat_exp_list, new_env)
 
 (* Typing of toplevel expressions *)
