@@ -1227,7 +1227,6 @@ and is_destructuring_pattern : type k . k general_pattern -> bool =
   fun pat -> match pat.pat_desc with
     | Tpat_any -> false
     | Tpat_var (_, _, _) -> false
-    | Tpat_unpack (_, _) -> false
     | Tpat_alias (pat, _, _, _) -> is_destructuring_pattern pat
     | Tpat_constant _ -> true
     | Tpat_tuple _ -> true

@@ -822,7 +822,7 @@ let rec build_as_type_and_mode ~refine ~mode (env : Env.t ref) p =
     (* Cf. #1655 *)
     List.fold_left (fun as_ty (extra, _loc, _attrs) ->
       match extra with
-      | Tpat_type _ | Tpat_open _ -> as_ty
+      | Tpat_type _ | Tpat_open _ | Tpat_unpack -> as_ty
       | Tpat_constraint cty ->
         (* [generic_instance] can only be used if the variables of the original
            type ([cty.ctyp_type] here) are not at [generic_level], which they are
@@ -933,7 +933,7 @@ and build_as_type_aux ~refine ~mode (env : Env.t ref) p =
         | Unknown | Always_on_64bits -> mode
       in
       p.pat_type, mode
-  | Tpat_any | Tpat_var _ | Tpat_unpack _
+  | Tpat_any | Tpat_var _
   | Tpat_array _ | Tpat_lazy _ ->
       p.pat_type, mode
 
@@ -2121,21 +2121,27 @@ and type_pat_aux
         pat_env = !env }
   | Ppat_unpack name ->
       assert construction_not_used_in_counterexamples;
-      let t = instance expected_ty in
-      let id =
-        Option.map
-          (fun txt -> enter_variable loc { name with txt } alloc_mode.mode
-            t ~is_module:true sp.ppat_attributes)
-          name.txt
-      in
-      let id = { name with txt = id } in
-      rvp k {
-        pat_desc = Tpat_unpack (id, alloc_mode.mode);
-        pat_loc = sp.ppat_loc;
-        pat_extra = [];
-        pat_type = t;
-        pat_attributes = [];
-        pat_env = !env }
+      begin match name.txt with
+      | None ->
+          rvp k {
+            pat_desc = Tpat_any;
+            pat_loc = sp.ppat_loc;
+            pat_extra=[Tpat_unpack, name.loc, sp.ppat_attributes];
+            pat_type = t;
+            pat_attributes = [];
+            pat_env = !env }
+      | Some s ->
+          let v = { name with txt = s } in
+          let id = enter_variable loc v alloc_mode.mode
+                     t ~is_module:true sp.ppat_attributes in
+          rvp k {
+            pat_desc = Tpat_var (id, v, alloc_mode.mode);
+            pat_loc = sp.ppat_loc;
+            pat_extra=[Tpat_unpack, loc, sp.ppat_attributes];
+            pat_type = t;
+            pat_attributes = [];
+            pat_env = !env }
+      end
   | Ppat_alias(sq, name) ->
       assert construction_not_used_in_counterexamples;
       type_pat Value sq expected_ty (fun q ->
@@ -2513,10 +2519,10 @@ and type_pat_aux
 
 let type_pat category ?no_existentials ?(mode=Normal)
     ?(lev=get_current_level()) ~alloc_mode env sp expected_ty =
-  Misc.protect_refs [ Misc.R (gadt_equations_level, Some lev) ] (fun () ->
-    type_pat category ~no_existentials ~mode
-      ~alloc_mode ~env sp expected_ty (fun x -> x)
-  )
+   Misc.protect_refs [Misc.R (gadt_equations_level, Some lev)] (fun () ->
+     type_pat category ~no_existentials ~mode
+       ~alloc_mode ~env sp expected_ty (fun x -> x)
+   )
 
 (* this function is passed to Partial.parmatch
    to type check gadt nonexhaustiveness *)
@@ -6265,8 +6271,7 @@ and type_statement ?explanation env sexp =
   end
 
 and type_unpacks ?(in_function : (Location.t * type_expr * bool) option)
-    env (expected_mode : expected_mode) (unpacks : to_unpack list) sbody expected_ty
-  =
+    env (expected_mode : expected_mode) (unpacks : to_unpack list) sbody expected_ty =
   if unpacks = [] then type_expect ?in_function env expected_mode sbody expected_ty else
   let extended_env =
     List.fold_left (fun env unpack ->
@@ -6279,6 +6284,7 @@ and type_unpacks ?(in_function : (Location.t * type_expr * bool) option)
                    (mkloc (Longident.Lident unpack.tu_name.txt)
                       unpack.tu_name.loc)))
         in
+        Mtype.lower_nongen (get_level ty) modl.mod_type;
         let pres =
           match modl.mod_type with
           | Mty_alias _ -> Mp_absent
@@ -6489,7 +6495,7 @@ and type_cases
   let modules_allowed = Some module_scope in
   let partial =
     if partial_flag then
-      check_partial ~lev env ty_arg_check loc val_cases ~modules_allowed
+      check_partial ~lev env ~modules_allowed ty_arg_check loc val_cases
     else
       Partial
   in
@@ -6837,7 +6843,7 @@ and type_let
 
             Error: Only variables are allowed as left-hand side of `let rec'
          *)
-           Tpat_var _ | Tpat_unpack ({ txt = Some _; _ }, _) -> ()
+           Tpat_var _ -> ()
          | _ -> raise(Error(pat.pat_loc, env, Illegal_letrec_pat)))
       l;
   List.iter (function

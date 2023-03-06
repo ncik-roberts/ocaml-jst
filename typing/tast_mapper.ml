@@ -210,7 +210,8 @@ let extension_constructor sub x =
   {x with ext_kind}
 
 let pat_extra sub = function
-  | Tpat_type _ as d -> d
+  | Tpat_type _
+  | Tpat_unpack as d -> d
   | Tpat_open (path,loc,env) ->  Tpat_open (path, loc, sub.env sub env)
   | Tpat_constraint ct -> Tpat_constraint (sub.typ sub ct)
 
@@ -223,8 +224,7 @@ let pat
     match x.pat_desc with
     | Tpat_any
     | Tpat_var _
-    | Tpat_constant _
-    | Tpat_unpack _ -> x.pat_desc
+    | Tpat_constant _ -> x.pat_desc
     | Tpat_tuple l -> Tpat_tuple (List.map (sub.pat sub) l)
     | Tpat_construct (loc, cd, l, vto) ->
         let vto = Option.map (fun (vl,cty) -> vl, sub.typ sub cty) vto in
