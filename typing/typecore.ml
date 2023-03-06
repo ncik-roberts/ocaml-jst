@@ -2121,6 +2121,7 @@ and type_pat_aux
         pat_env = !env }
   | Ppat_unpack name ->
       assert construction_not_used_in_counterexamples;
+      let t = instance expected_ty in
       begin match name.txt with
       | None ->
           rvp k {
@@ -6284,7 +6285,8 @@ and type_unpacks ?(in_function : (Location.t * type_expr * bool) option)
                    (mkloc (Longident.Lident unpack.tu_name.txt)
                       unpack.tu_name.loc)))
         in
-        Mtype.lower_nongen (get_level ty) modl.mod_type;
+        (* TODO nroberts: figure out *)
+        (* Mtype.lower_nongen (get_level ty) modl.mod_type; *)
         let pres =
           match modl.mod_type with
           | Mty_alias _ -> Mp_absent

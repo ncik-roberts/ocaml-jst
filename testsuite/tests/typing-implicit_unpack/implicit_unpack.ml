@@ -184,7 +184,7 @@ end;;
 let rec (module M : S) =
   (module struct type t = M.t end : S with type t = M.t)
 in ();;
-[%%expect {|
+[%%expect{|
 module type S = sig type t end
 Line 6, characters 2-56:
 6 |   (module struct type t = M.t end : S with type t = M.t)
@@ -197,7 +197,25 @@ let f (type a) () =
   let rec (module M : S with type t = a) =
     (module struct type t = M.t end : S with type t = M.t)
   in ();;
-[%%expect {|
+[%%expect{|
+val f : unit -> unit = <fun>
+|}];;
+
+let f () =
+  let rec k =
+    let (module K : S with type t = A.t) = k in
+    (module struct
+      type t = K.t
+    end : S with type t = K.t)
+  and (module A : S) =
+    (module struct
+      type t = unit
+      let x = ()
+    end)
+  in
+  ignore k
+;;
+[%%expect{|
 val f : unit -> unit = <fun>
 |}];;
 
@@ -216,7 +234,7 @@ let f () =
   in
   let unify x = if true then M.x else x in
   unify ();;
-[%%expect {|
+[%%expect{|
 module type S = sig type t val x : t end
 Line 13, characters 8-10:
 13 |   unify ();;
