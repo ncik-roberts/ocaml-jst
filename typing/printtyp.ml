@@ -294,9 +294,9 @@ let env_ident namespace name =
 (** Associate a name to the identifier [id] within [namespace] *)
 let ident_name_simple namespace id =
   if not !enabled || fuzzy_id namespace id then
-    Out_name.create (Ident.name id)
+    Out_name.create (Ident.name_with_scope id)
   else
-  let name = Ident.name id in
+  let name = Ident.name_with_scope id in
   match M.find name (get namespace) with
   | Uniquely_associated_to (id',r) when Ident.same id id' ->
       r
@@ -327,7 +327,7 @@ let ident_name_simple namespace id =
 (** Same as {!ident_name_simple} but lookup to existing named identifiers
     in the current {!printing_env} *)
 let ident_name namespace id =
-  begin match env_ident namespace (Ident.name id) with
+  begin match env_ident namespace (Ident.name_with_scope id) with
   | Some id' -> ignore (ident_name_simple namespace id')
   | None -> ()
   end;
@@ -1248,7 +1248,7 @@ and tree_of_typ_gf (ty, gf) =
     | Unrestricted -> Ogf_unrestricted
   in
   (tree_of_typexp Type ty, gf)
-  
+
 and tree_of_typobject mode fi nm =
   begin match nm with
   | None ->
@@ -2600,3 +2600,5 @@ let type_expansion mode ppf ty_exp =
 let tree_of_type_declaration ident td rs =
   with_hidden_items [{hide=true; ident}]
     (fun () -> tree_of_type_declaration ident td rs)
+
+let () = In_function.print_type_expr := raw_type_expr

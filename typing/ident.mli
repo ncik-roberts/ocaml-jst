@@ -41,6 +41,7 @@ val rename: t -> t
             @raise [Fatal_error] if called on a persistent / predef ident. *)
 
 val name: t -> string
+val name_with_scope: t -> string
 val unique_name: t -> string
 val unique_toplevel_name: t -> string
 val same: t -> t -> bool

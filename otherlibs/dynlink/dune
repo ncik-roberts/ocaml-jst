@@ -63,6 +63,7 @@
     cmi_format
     persistent_env
     env
+    in_function
     debuginfo
     lambda
     runtimedef
@@ -143,6 +144,7 @@
 (copy_files ../../typing/predef.ml)
 (copy_files ../../typing/datarepr.ml)
 (copy_files ../../file_formats/cmi_format.ml)
+(copy_files ../../typing/in_function.ml)
 (copy_files ../../typing/persistent_env.ml)
 (copy_files ../../typing/env.ml)
 (copy_files ../../lambda/debuginfo.ml)
@@ -199,6 +201,7 @@
 (copy_files ../../typing/predef.mli)
 (copy_files ../../typing/datarepr.mli)
 (copy_files ../../file_formats/cmi_format.mli)
+(copy_files ../../typing/in_function.mli)
 (copy_files ../../typing/persistent_env.mli)
 (copy_files ../../typing/env.mli)
 (copy_files ../../lambda/debuginfo.mli)
@@ -285,6 +288,7 @@
       .dynlink_compilerlibs.objs/byte/dynlink_compilerlibs__Load_path.cmo
       .dynlink_compilerlibs.objs/byte/dynlink_compilerlibs__Lazy_backtrack.cmo
       .dynlink_compilerlibs.objs/byte/dynlink_compilerlibs__Persistent_env.cmo
+      .dynlink_compilerlibs.objs/byte/dynlink_compilerlibs__In_function.cmo
       .dynlink_compilerlibs.objs/byte/dynlink_compilerlibs__Docstrings.cmo
       .dynlink_compilerlibs.objs/byte/dynlink_compilerlibs__Ast_helper.cmo
       .dynlink_compilerlibs.objs/byte/dynlink_compilerlibs__Extensions_parsing.cmo
@@ -356,6 +360,7 @@
       .dynlink_compilerlibs.objs/native/dynlink_compilerlibs__Load_path.cmx
       .dynlink_compilerlibs.objs/native/dynlink_compilerlibs__Lazy_backtrack.cmx
       .dynlink_compilerlibs.objs/native/dynlink_compilerlibs__Persistent_env.cmx
+      .dynlink_compilerlibs.objs/native/dynlink_compilerlibs__In_function.cmx
       .dynlink_compilerlibs.objs/native/dynlink_compilerlibs__Docstrings.cmx
       .dynlink_compilerlibs.objs/native/dynlink_compilerlibs__Ast_helper.cmx
       .dynlink_compilerlibs.objs/native/dynlink_compilerlibs__Extensions_parsing.cmx

@@ -178,6 +178,21 @@ let print ~with_scope ppf =
 
 let print_with_scope ppf id = print ~with_scope:true ppf id
 
+
+let buf = Buffer.create 1_000
+
+let formatter_to_string : 'a. (Format.formatter -> 'a -> unit) -> 'a -> string =
+  fun print thing ->
+    let formatter = Format.formatter_of_buffer buf in
+    print formatter thing;
+    Format.pp_print_flush formatter ();
+    let result = Buffer.contents buf in
+    Buffer.reset buf;
+    result
+;;
+
+let name_with_scope = formatter_to_string (print ~with_scope:true)
+
 let print ppf id = print ~with_scope:false ppf id
 
 type 'a tbl =
