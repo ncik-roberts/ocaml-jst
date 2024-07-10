@@ -15,11 +15,14 @@
 
 (** Support for the builtin attributes:
 
+    - ocaml.afl_inst_ratio
     - ocaml.alert
     - ocaml.boxed
     - ocaml.deprecated
     - ocaml.deprecated_mutable
     - ocaml.explicit_arity
+    - ocaml.flambda_o3
+    - ocaml.flambda_oclassic
     - ocaml.immediate
     - ocaml.immediate64
     - ocaml.inline
